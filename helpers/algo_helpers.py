@@ -2,6 +2,20 @@ from algosdk import account, mnemonic, transaction
 from algosdk.v2client import algod
 import math
 
+
+def generate_algorand_account():
+    private_key, address = account.generate_account()
+    passphrase = mnemonic.from_private_key(private_key)
+    
+    print("Address:", address)
+    print("Mnemonic:", passphrase)
+
+    return {
+        "address": address,
+        "private_key": private_key,
+        "mnemonic": passphrase
+    }
+
 def connect_wallet(mnemonic_phrase: str = None) -> tuple:
     """
     Retrieves the user's wallet address, private key, and initializes the algod client.
@@ -224,3 +238,25 @@ def cancel_order(algod_client, address: str, private_key: str, order_id: str) ->
     transaction.wait_for_confirmation(algod_client, txid, 4)
     print(f"Cancel order transaction for order {order_id} submitted, txID: {txid}")
     return txid
+
+# Dummy helper to simulate placing a limit order.
+def place_limit_order(algod_client, address, private_key, side, asset_id, quantity, limit_price):
+    """
+    Simulates placing a limit order.
+    
+    Args:
+        algod_client: The Algorand client.
+        address (str): Your wallet address.
+        private_key (str): Your wallet's private key.
+        side (str): "buy" or "sell".
+        asset_id (int): The asset ID.
+        quantity (int): Amount for the order.
+        limit_price (float): The limit price (expressed as a percentage, for demo).
+        
+    Returns:
+        str: A dummy order ID.
+    """
+    print(f"[Order Placement] Placing {side.upper()} order for asset {asset_id} at limit price {limit_price} for quantity {quantity}")
+    # In production, this function would submit an order to your matching engine or DEX smart contract.
+    dummy_order_id = f"{side}_{asset_id}_{limit_price}_{int(time.time())}"
+    return dummy_order_id
