@@ -1,6 +1,7 @@
 from algosdk import account, mnemonic, transaction
 from algosdk.v2client import algod
 import math
+from algosdk.transaction import PaymentTxn
 
 
 def generate_algorand_account():
