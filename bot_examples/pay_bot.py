@@ -30,7 +30,6 @@ import os
 import time
 from dotenv import load_dotenv
 from algokit_utils import AlgorandClient, SigningAccount, AlgoAmount
-from algosdk import mnemonic
 from algokit_utils import AlgoAmount, PaymentParams
 
 load_dotenv()
