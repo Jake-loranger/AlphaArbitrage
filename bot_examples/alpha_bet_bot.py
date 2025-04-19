@@ -2,7 +2,7 @@
 Alpha Arcade Betting Bot
 
 This script creates a group transaction to place a bet on Alpha Arcade using an escrow order.
-It combines payment transactions, asset transfers, and application calls in a single atomic group.
+It combines a payment transaction, asset transfer, and application call in a single atomic group.
 
 Requirements:
 - python-dotenv: For loading environment variables
@@ -18,195 +18,168 @@ USDC_ASSET_ID=10458941  # USDC asset ID
 YES_ASSET_ID=123456  # YES token asset ID
 NO_ASSET_ID=123457  # NO token asset ID
 """
-
+from decimal import Decimal
 import os
 import math
 import time
+import asyncio
+import algosdk
 from dotenv import load_dotenv
 from algosdk import mnemonic, account
 from algosdk.transaction import PaymentTxn, AssetTransferTxn
+from algosdk.atomic_transaction_composer import AtomicTransactionComposer, TransactionWithSigner, AccountTransactionSigner
+from algosdk.abi import Method
+from algosdk.abi.method import Argument, Returns
+from algosdk.error import AlgodHTTPError
 from algokit_utils import AlgorandClient
-from algosdk.transaction import ApplicationCallTxn
-from algosdk.atomic_transaction_composer import AtomicTransactionComposer, TransactionWithSigner
-from algosdk.atomic_transaction_composer import AccountTransactionSigner
+
 # Load environment variables
 load_dotenv()
 
-# Helper function to convert to microAlgos
+# Helper: convert to microAlgos
 def micro_algos(amount):
     return int(amount)
 
-# Helper function to check if account has opted into an asset
+# Simple wait-for-confirmation
+def wait_for_confirmation(client, txid, timeout=10):
+    start = time.time()
+    while True:
+        try:
+            result = client.pending_transaction_info(txid)
+            if result.get("confirmed-round", 0) > 0:
+                return result
+        except Exception:
+            pass
+        if time.time() - start > timeout:
+            raise Exception(f"Transaction not confirmed after {timeout}s")
+        time.sleep(1)
+
+# Check if account is opted into an asset
 async def check_asset_opt_in(address, asset_id, algod_client):
-    account_info = algod_client.account_info(address)
-    for asset in account_info.get("assets", []):
-        if asset["asset-id"] == asset_id:
+    info = algod_client.account_info(address)
+    for asset in info.get("assets", []):
+        if asset.get("asset-id") == asset_id:
             return True
     return False
 
+def calculate_fee(quantity: int, price: int, fee_base: int) -> int:
+    """
+    Calculate a required fee using base formula and Decimal for precision.
+    Formula: fee_base * quantity * price * (1 - price) in micro-units, then ceil.
+    """
+    q = Decimal(str(quantity))
+    p = Decimal(str(price)) / Decimal("1000000")
+    fb = Decimal(str(fee_base)) / Decimal("1000000")
+    fee = fb * q * p * (Decimal("1") - p)
+    return math.ceil(fee)
+
 async def create_bet(
-    is_buying: bool,  # True if buying YES/NO tokens, False if selling
-    quantity: int,    # Quantity of tokens
-    price: int,       # Price per token in microUSDC (1000000 = 1 USDC)
-    position: int,    # 1 for YES, 0 for NO
-    fee: int = 1000   # Fee in microUSDC
+    is_buying: bool,
+    quantity: int,
+    price: int,
+    position: int,
+    slippage: int
 ):
-    # Get configuration from environment variables
+    # Load config
     sender_mnemonic = os.getenv("SENDER_MNEMONIC")
-    if not sender_mnemonic:
-        print("Error: SENDER_MNEMONIC not found in environment variables")
-        return
-    
-    market_address = os.getenv("MARKET_ADDRESS")
-    if not market_address:
-        print("Error: MARKET_ADDRESS not found in environment variables")
-        return
-    
-    market_app_id = int(os.getenv("MARKET_APP_ID", "0"))
-    if market_app_id == 0:
-        print("Error: MARKET_APP_ID not found in environment variables")
-        return
-    
-    usdc_asset_id = int(os.getenv("USDC_ASSET_ID", "31566704"))
-    yes_asset_id = int(os.getenv("YES_ASSET_ID", "0"))
-    no_asset_id = int(os.getenv("NO_ASSET_ID", "0"))
-    
-    if yes_asset_id == 0 or no_asset_id == 0:
-        print("Error: YES_ASSET_ID or NO_ASSET_ID not found in environment variables")
-        return
-    
-    # Connect to Algorand network
-    algorand = AlgorandClient.mainnet()  # Use .test_net() for testing
+    market_address  = os.getenv("MARKET_ADDRESS")
+    market_app_id   = int(os.getenv("MARKET_APP_ID", "0"))
+    usdc_asset_id   = int(os.getenv("USDC_ASSET_ID", "0"))
+    yes_asset_id    = int(os.getenv("YES_ASSET_ID", "0"))
+    no_asset_id     = int(os.getenv("NO_ASSET_ID", "0"))
+
+    if not all([sender_mnemonic, market_address, market_app_id, usdc_asset_id, yes_asset_id, no_asset_id]):
+        raise Exception("Missing environment variables")
+
+    # Setup clients and keys
+    algorand = AlgorandClient.mainnet()
     algod_client = algorand.client.algod
-    
-    # Get sender account from mnemonic
     private_key = mnemonic.to_private_key(sender_mnemonic)
     sender_address = account.address_from_private_key(private_key)
-    
-    # Create a signer object
     signer = AccountTransactionSigner(private_key)
-    
-    print(f"Sender account: {sender_address}")
-    print(f"Market address: {market_address}")
-    print(f"{'Buying' if is_buying else 'Selling'} {'YES' if position == 1 else 'NO'} tokens")
-    print(f"Quantity: {quantity}, Price: {price/1000000} USDC per token")
-    
-    # Create market data structure similar to the example
-    market = {
-        "marketAppId": market_app_id,
-        "yesAssetId": yes_asset_id,
-        "noAssetId": no_asset_id
-    }
-    
-    # Get suggested parameters
+
+    print(f"Sender: {sender_address}\nMarket App ID: {market_app_id}")
+    print(f"{'Buying' if is_buying else 'Selling'} {'YES' if position else 'NO'} tokens: qty={quantity}, price={price/1e6} USDC")
+
     sp = algod_client.suggested_params()
     
-    try:
-        # Create AtomicTransactionComposer
-        atc = AtomicTransactionComposer()
-        
-        # 1) Transfer ALGO to cover escrow contract cost
-        payment_txn = PaymentTxn(
-            sender=sender_address,
-            sp=sp,
-            receiver=market_address,
-            amt=micro_algos(967600),
-            note=b"Escrow ALGO Funding"
-        )
-        txn_with_signer = TransactionWithSigner(payment_txn, signer)
-        atc.add_transaction(txn_with_signer)
-        
-        # 2) Transfer correct asset (USDC if buying, or YES/NO if selling)
-        asset_id = usdc_asset_id if is_buying else (
-            yes_asset_id if position == 1 else no_asset_id
-        )
-        
-        fund_amount = (math.floor(quantity * price / 1000000) + fee) if is_buying else math.floor(quantity)
-        
-        asset_transfer_txn = AssetTransferTxn(
-            sender=sender_address,
-            sp=sp,
-            receiver=market_address,
-            amt=fund_amount,
-            index=asset_id,
+    fund_asset_id = usdc_asset_id if is_buying else (yes_asset_id if position == 1 else no_asset_id)
+    opt_asset_id = yes_asset_id if is_buying and position == 1 else (
+                   no_asset_id  if is_buying and position == 0 else (
+                   usdc_asset_id if not is_buying else usdc_asset_id))
+
+    # Pre-opt-in if needed
+    if not await check_asset_opt_in(sender_address, opt_asset_id, algod_client):
+        print(f"Opting in to asset {opt_asset_id}...")
+        txn = AssetTransferTxn(sender_address, sp, sender_address, 0, opt_asset_id, note=b"Opt-in")
+        signed = txn.sign(private_key)
+        txid = algod_client.send_transaction(signed)
+        wait_for_confirmation(algod_client, txid)
+        print("Opt-in confirmed.")
+
+    # Build ABI Method
+    create_escrow_method = Method(
+        name="create_escrow",
+        args=[
+            Argument(name="price", arg_type="uint64"),
+            Argument(name="quantity", arg_type="uint64"),
+            Argument(name="slippage", arg_type="uint64"),
+            Argument(name="position", arg_type="uint8"),
+        ],
+        returns=Returns(arg_type="uint64")
+    )
+
+    # Atomic group: ALGO, asset, app call
+    atc = AtomicTransactionComposer()
+    # ALGO funding
+    atc.add_transaction(TransactionWithSigner(
+        PaymentTxn(
+            sender_address, 
+            sp, 
+            algosdk.logic.get_application_address(market_app_id), # 2829831047
+            967_600, 
+            note=b"Escrow ALGO Funding"),
+        signer
+    ))
+
+    # Asset funding
+    fee = calculate_fee(quantity, price, fee_base=70_000) 
+    asset_amt = math.floor(quantity * price / 1_000_000) + fee
+    atc.add_transaction(TransactionWithSigner(
+        AssetTransferTxn(
+            sender_address, 
+            sp, 
+            algosdk.logic.get_application_address(market_app_id),
+            asset_amt, 
+            fund_asset_id,
             note=b"Escrow Asset Funding"
-        )
-        txn_with_signer = TransactionWithSigner(asset_transfer_txn, signer)
-        atc.add_transaction(txn_with_signer)
-
-        # 3) Create escrow on market
-        app_args = [
-            b"create_escrow",
-            price.to_bytes(8, 'big') if is_buying else (1000000 - price).to_bytes(8, 'big'),
-            quantity.to_bytes(8, 'big'),
-            (0).to_bytes(8, 'big'),  # slippage
-            position.to_bytes(8, 'big')
-        ]
-        
-        foreign_assets = [usdc_asset_id, yes_asset_id, no_asset_id]
-        
-        app_call_txn = ApplicationCallTxn(
+        ),
+        signer
+    ))
+    # App call with correct asset order
+    try:
+        result = atc.add_method_call(
+            app_id=market_app_id,
+            method=create_escrow_method,
             sender=sender_address,
             sp=sp,
-            index=market_app_id,
-            on_complete=0,  # NoOp
-            app_args=app_args,
-            foreign_assets=foreign_assets
+            signer=signer,
+            method_args=[
+                price,    
+                quantity, 
+                slippage, 
+                position  
+            ],
+            foreign_assets=[usdc_asset_id, yes_asset_id, no_asset_id]
         )
-        
-        txn_with_signer = TransactionWithSigner(app_call_txn, signer)
-        atc.add_transaction(txn_with_signer)
-
-        # 4) Opt-in if needed
-        if not is_buying:
-            # If selling, might need USDC opt-in
-            has_usdc_opt_in = await check_asset_opt_in(sender_address, usdc_asset_id, algod_client)
-            if not has_usdc_opt_in:
-                opt_in_txn = AssetTransferTxn(
-                    sender=sender_address,
-                    sp=sp,
-                    receiver=sender_address,
-                    amt=0,
-                    index=usdc_asset_id,
-                    note=b"Opt-in USDC"
-                )
-                txn_with_signer = TransactionWithSigner(opt_in_txn, signer)
-                atc.add_transaction(txn_with_signer)
-        else:
-            # If buying, check opt-in for (YES or NO)
-            opt_asset_id = yes_asset_id if position == 1 else no_asset_id
-            has_opt_in = await check_asset_opt_in(sender_address, opt_asset_id, algod_client)
-            if not has_opt_in:
-                opt_in_txn = AssetTransferTxn(
-                    sender=sender_address,
-                    sp=sp,
-                    receiver=sender_address,
-                    amt=0,
-                    index=opt_asset_id,
-                    note=f"Opt-in asset {opt_asset_id}".encode()
-                )
-                txn_with_signer = TransactionWithSigner(opt_in_txn, signer)
-                atc.add_transaction(txn_with_signer)
-                
-        
-        print("Submitting transaction group...")
-        result = atc.execute(algod_client, 4)  # Wait for up to 4 rounds
-        
-        print(f"Bet placed successfully! Transaction ID: {result.tx_ids[0]}")
-        print(f"Transaction confirmed in round: {result.confirmed_round}")
-        
-    except Exception as e:
-        print(f"Error occurred: {str(e)}")
-
+        print("Submitting group...")
+        res = atc.execute(algod_client, 4)
+        print(f"Success: {res.tx_ids}, confirmed in {res.confirmed_round}")
+    except AlgodHTTPError as e:
+        print(f"ATC error: {e}")
 
 async def main():
-    await create_bet(
-    is_buying=True,
-    quantity=1,
-    price=730000,  # 0.73 USDC in micro units
-    position=0     # 0 = NO position
-)
+    await create_bet(is_buying=True, quantity=2_000_000, price=730_000, slippage=0, position=0)
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())

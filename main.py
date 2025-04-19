@@ -50,7 +50,7 @@ async def main():
     while True:
         try:
             # Get current order book for our Alpha Arcade market.
-            orderbook = get_alpha_orderbook(ALPHA_MARKET_APP)
+            orderbook = get_alpha_orderbook(2829831047)
             # print("[Alpha Orderbook]")
             # print(json.dumps(orderbook, indent=2))
 
