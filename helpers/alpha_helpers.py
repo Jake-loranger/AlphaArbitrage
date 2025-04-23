@@ -1,3 +1,5 @@
+from decimal import Decimal
+import math
 import requests
 from dotenv import load_dotenv
 
@@ -26,3 +28,14 @@ def get_alpha_orderbook(market_id: str) -> dict:
     except Exception as e:
         print(f"An error occurred: {e}")
         return {}
+    
+def calculate_fee(quantity: int, price: int, fee_base: int) -> int:
+    """
+    Calculate a required fee using base formula and Decimal for precision.
+    Formula: fee_base * quantity * price * (1 - price) in micro-units, then ceil.
+    """
+    q = Decimal(str(quantity))
+    p = Decimal(str(price)) / Decimal("1000000")
+    fb = Decimal(str(fee_base)) / Decimal("1000000")
+    fee = fb * q * p * (Decimal("1") - p)
+    return math.ceil(fee)
