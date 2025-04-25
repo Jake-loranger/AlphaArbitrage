@@ -45,7 +45,7 @@ def main():
         print("Error: TARGET_ADDRESS not found in environment variables")
         return
     
-    amount_to_send = float(os.getenv("AMOUNT_TO_SEND", "0.1"))  # Default to 0.1 Algo if not specified
+    amount_to_send = 0.1
     
     # Connect to Algorand network
     # Use mainnet() for production or test_net() for testing

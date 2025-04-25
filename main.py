@@ -109,9 +109,8 @@ async def main():
     #         print(f"[Error] Exception in main loop: {e}")
     #         print(f"[Error] Process Stopping. Please check the logs.")
     #         break
-    # await algo_helpers.cancel_bet(escrow_id=2944558931, market_app_id=2829831047)
-    # await algo_helpers.create_bet(is_buying=True, quantity=1_000_000, price=10_000, slippage=0, position=0, market=None)
-    # algo_helpers.cancel_bet(escrow_app_id=2946994131, market_app_id=2829831047)
+    # await algo_helpers.create_bet(is_buying=True, quantity=100_000, price=10_000, slippage=0, position=0, market=None)
+    # await algo_helpers.cancel_bet(escrow_app_id=2953106831, market_app_id=2829831047)
 
 if __name__ == "__main__":
     asyncio.run(main())
