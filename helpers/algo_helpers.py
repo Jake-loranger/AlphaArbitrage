@@ -12,6 +12,7 @@ from algosdk.abi import Method
 from algosdk.abi.method import Argument, Returns
 from algosdk.error import AlgodHTTPError
 from helpers.alpha_helpers import calculate_fee
+from helpers.log_helpers import log_data
 from models.market import Market
 from algokit_utils import (
     AppClient, 
@@ -113,12 +114,12 @@ def opt_in_to_asset(algod_client, address: str, private_key: str, asset_id: int)
         )
         signed_txn = txn.sign(private_key)
         txid = algod_client.send_transaction(signed_txn)
-        print(f"Sent opt-in transaction for asset {asset_id}, txID: {txid}")
+        log_data(f"[ACTION] Sent opt-in transaction for asset {asset_id}, txID: {txid}")
 
         transaction.wait_for_confirmation(algod_client, txid, 4)
-        print(f"Successfully opted into asset {asset_id}")
+        log_data(f"[INFO] Successfully opted into asset {asset_id}")
     except Exception as e:
-        print(f"Error opting into asset {asset_id}:", e)
+        log_data(f"[ERROR] Error opting into asset {asset_id}:", e)
 
 async def create_bet(
     is_buying: bool,
@@ -127,13 +128,13 @@ async def create_bet(
     position: int,
     slippage: int,
     market: Market
-):
+) -> int:
     # Load config
     sender_mnemonic = os.getenv("SENDER_MNEMONIC")
-    market_app_id   = int(os.getenv("MARKET_APP_ID", "0"))
-    usdc_asset_id   = int(os.getenv("USDC_ASSET_ID", "0"))
-    yes_asset_id    = int(os.getenv("YES_ASSET_ID", "0"))
-    no_asset_id     = int(os.getenv("NO_ASSET_ID", "0"))
+    market_app_id = market.marketAppId
+    usdc_asset_id  = 31566704
+    yes_asset_id = market.yesAssetId
+    no_asset_id  = market.noAssetId
 
     if not all([sender_mnemonic, market_app_id, usdc_asset_id, yes_asset_id, no_asset_id]):
         raise Exception("Missing environment variables")
@@ -145,24 +146,10 @@ async def create_bet(
     sender_address = account.address_from_private_key(private_key)
     signer = AccountTransactionSigner(private_key)
 
-    print(f"Sender: {sender_address}\nMarket App ID: {market_app_id}")
-    print(f"{'Buying' if is_buying else 'Selling'} {'YES' if position else 'NO'} tokens: qty={quantity}, price={price/1e6} USDC")
+    log_data(f"[INFO] {'Buying' if is_buying else 'Selling'} {'YES' if position else 'NO'} tokens: qty={quantity/1e6}, price={price/1e6} USDC")
 
     sp = algod_client.suggested_params()
-    
     fund_asset_id = usdc_asset_id if is_buying else (yes_asset_id if position == 1 else no_asset_id)
-    opt_asset_id = yes_asset_id if is_buying and position == 1 else (
-                   no_asset_id  if is_buying and position == 0 else (
-                   usdc_asset_id if not is_buying else usdc_asset_id))
-
-    # Pre-opt-in if needed
-    if not await check_asset_opt_in(sender_address, opt_asset_id, algod_client):
-        print(f"Opting in to asset {opt_asset_id}...")
-        txn = AssetTransferTxn(sender_address, sp, sender_address, 0, opt_asset_id, note=b"Opt-in")
-        signed = txn.sign(private_key)
-        txid = algod_client.send_transaction(signed)
-        wait_for_confirmation(algod_client, txid)
-        print("Opt-in confirmed.")
 
     # Build ABI Method
     create_escrow_method = Method(
@@ -203,9 +190,8 @@ async def create_bet(
         signer
     ))
     
-    # App call
     try:
-        result = atc.add_method_call(
+        atc.add_method_call(
             app_id=market_app_id,
             method=create_escrow_method,
             sender=sender_address,
@@ -219,20 +205,25 @@ async def create_bet(
             ],
             foreign_assets=[usdc_asset_id, yes_asset_id, no_asset_id]
         )
-        print("Submitting group...")
+        log_data("[INFO] Submitting group...")
         res = atc.execute(algod_client, 4)
-        print(f"Success: {res.tx_ids}, confirmed in {res.confirmed_round}")
+        log_data(f"[INFO] Success: {res.tx_ids}, confirmed in {res.confirmed_round}")
+        return res.abi_results[0].return_value
     except AlgodHTTPError as e:
-        print(f"ATC error: {e}")
+        log_data(f"[ERROR] ATC error: {e}")
+
 
 async def cancel_bet(
     escrow_app_id: int,
-    market_app_id: int,
+    market: Market
 ) -> None:
     sender_mnemonic = os.getenv("SENDER_MNEMONIC")
     if not sender_mnemonic:
         raise ValueError("Missing sender mnemonic in environment.")
 
+    usdc_asset_id  = 31566704
+    yes_asset_id = market.yesAssetId
+    no_asset_id  = market.noAssetId
     algorand = AlgorandClient.mainnet()
     algod_client = algorand.client.algod
     private_key = mnemonic.to_private_key(sender_mnemonic)
@@ -263,7 +254,7 @@ async def cancel_bet(
     market_app_client = AppClient(
         AppClientParams(
             app_spec=MARKET_APP_SPEC,
-            app_id=market_app_id,
+            app_id=market.marketAppId,
             algorand=algorand,
             default_sender=sender_address
         )
@@ -277,11 +268,11 @@ async def cancel_bet(
             extra_fee=AlgoAmount(micro_algo=4000),
             args=[],
             asset_references=[
-                int(os.environ["USDC_ASSET_ID"]),
-                int(os.environ["YES_ASSET_ID"]),
-                int(os.environ["NO_ASSET_ID"]),
+                usdc_asset_id,
+                yes_asset_id,
+                no_asset_id,
             ],
-            app_references=[market_app_id],
+            app_references=[market.marketAppId],
             signer=signer
         )
     )
@@ -293,9 +284,9 @@ async def cancel_bet(
             extra_fee=AlgoAmount(micro_algo=1000),
             args=[sender_address],  
             asset_references=[
-                int(os.environ["USDC_ASSET_ID"]),
-                int(os.environ["YES_ASSET_ID"]),
-                int(os.environ["NO_ASSET_ID"]),
+                usdc_asset_id,
+                yes_asset_id,
+                no_asset_id,
             ],
             app_references=[escrow_app_id],
             signer=signer
@@ -304,7 +295,8 @@ async def cancel_bet(
     atc.add_transaction(TransactionWithSigner(register_escrow_delete_txn.transactions[0], signer))
 
     try:
+        log_data(f"[ACTION] Submitting cancel order for {escrow_app_id}...")
         res = atc.execute(algod_client, 4)
-        print(f"Success: {res.tx_ids}, confirmed in {res.confirmed_round}")
+        log_data(f"[INFO] Success: {res.tx_ids}, confirmed in {res.confirmed_round}")
     except AlgodHTTPError as e:
-        print(f"ATC error: {e}")
+        log_data(f"[ERROR] ATC error: {e}")

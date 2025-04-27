@@ -41,3 +41,25 @@ def american_to_probability(american_odds):
     else:
         probability = -american_odds / (-american_odds + 100)
     return round(probability * 100, 2)
+
+def round_to_nearest_2_digits(x):
+    """
+    Rounds a number to the nearest value with two significant digits.
+
+    For example:
+    - 356200 becomes 360000
+    - 724 becomes 720
+    - 0 remains 0
+
+    Args:
+        x (int or float): The number to round.
+
+    Returns:
+        int: The rounded number.
+    """
+    from math import log10, floor
+    if x == 0:
+        return 0
+    digits = int(floor(log10(abs(x))))
+    return round(x, -digits + 1)
+
