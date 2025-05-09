@@ -4,31 +4,10 @@ from helpers.alpha_helper import AlphaHelper
 from helpers.odds_helper import OddsAPIHelper
 from math import log10, floor
 
-def round_to_nearest_2_digits(x):
-    """
-    Rounds a number to the nearest value with two significant digits.
-
-    For example:
-    - 356200 becomes 360000
-    - 724 becomes 720
-    - 0 remains 0
-
-    Args:
-        x (int or float): The number to round.
-
-    Returns:
-        int: The rounded number.
-    """
-    from math import log10, floor
-    if x == 0:
-        return 0
-    digits = int(floor(log10(abs(x))))
-    return round(x, -digits + 1)
-
 async def main():
 
-    MARKET_ID = "01JTGR27C84ZKV68TA8FE5GBEY" 
-    ODDS_MARKET_ID = "fe3e8dc29347048c12b0e42752801b15"
+    MARKET_ID = "ALPHA_MARKET_ID"  # Replace with actual market ID
+    ODDS_MARKET_ID = "ODDS_MARKET_ID"  # Replace with actual odds market ID
 
     # Initialize the helpers
     algo = AlgorandHelper()
@@ -39,9 +18,9 @@ async def main():
     market = await alpha.get_market_info(MARKET_ID)
 
     # Get odds for sports
-    # matchup_odds = odds.get_matchup_odds(  
-    #     event_id=ODDS_MARKET_ID
-    # )
+    matchup_odds = odds.get_matchup_odds(  
+        event_id=ODDS_MARKET_ID
+    )
 
     # get current orderbook
     alpha_orderbook = alpha.get_orderbook(
