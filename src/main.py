@@ -2,7 +2,6 @@ import asyncio
 from helpers.algorand_helper import AlgorandHelper
 from helpers.alpha_helper import AlphaHelper
 from helpers.odds_helper import OddsAPIHelper
-from math import log10, floor
 
 async def main():
 
@@ -36,7 +35,6 @@ async def main():
         slippage=0, 
         market=market
     )
-    print(f"Escrow app id: {escrow_app_id}")
 
     
 if __name__ == "__main__":
