@@ -62,7 +62,7 @@ def connect_wallet(mnemonic_phrase: str = None) -> tuple:
     algod_client = algod.AlgodClient("", "https://mainnet-api.4160.nodely.dev")
     return algod_client, address, private_key
 
-async def check_asset_opt_in(address, asset_id, algod_client):
+async def check_asset_opt_in(asset_id):
     """
     Checks if the given address is opted into the specified asset.
     
@@ -74,6 +74,12 @@ async def check_asset_opt_in(address, asset_id, algod_client):
     Returns:
         bool: True if opted in, False otherwise.
     """
+    
+    sender_mnemonic = os.getenv("SENDER_MNEMONIC")
+    algorand = AlgorandClient.mainnet()
+    algod_client = algorand.client.algod
+    private_key = mnemonic.to_private_key(sender_mnemonic)
+    address = account.address_from_private_key(private_key)
     info = algod_client.account_info(address)
     for asset in info.get("assets", []):
         if asset.get("asset-id") == asset_id:
@@ -93,7 +99,7 @@ def wait_for_confirmation(client, txid, timeout=10):
             raise Exception(f"Transaction not confirmed after {timeout}s")
         time.sleep(1)
 
-def opt_in_to_asset(algod_client, address: str, private_key: str, asset_id: int):
+async def opt_in_to_asset(asset_id: int):
     """
     Sends a 0-amount asset transfer to self to opt into the asset.
 
@@ -103,6 +109,15 @@ def opt_in_to_asset(algod_client, address: str, private_key: str, asset_id: int)
         private_key (str): The private key to sign the transaction.
         asset_id (int): The asset ID to opt into.
     """
+    sender_mnemonic = os.getenv("SENDER_MNEMONIC")
+    if not sender_mnemonic:
+        raise Exception("Missing environment variables")
+    
+    algorand = AlgorandClient.mainnet()
+    algod_client = algorand.client.algod
+    private_key = mnemonic.to_private_key(sender_mnemonic)
+    address = account.address_from_private_key(private_key)
+
     try:
         params = algod_client.suggested_params()
         txn = transaction.AssetTransferTxn(
