@@ -2,11 +2,12 @@ import asyncio
 from helpers.algorand_helper import AlgorandHelper
 from helpers.alpha_helper import AlphaHelper
 from helpers.odds_helper import OddsAPIHelper
+from math import log10, floor
 
 async def main():
 
-    MARKET_ID = "ALPHA_MARKET_ID"  # Replace with actual market ID
-    ODDS_MARKET_ID = "ODDS_MARKET_ID"  # Replace with actual odds market ID
+    MARKET_ID = "01JTGR27C84ZKV68TA8FE5GBEY" 
+    ODDS_MARKET_ID = "fe3e8dc29347048c12b0e42752801b15"
 
     # Initialize the helpers
     algo = AlgorandHelper()
@@ -17,7 +18,8 @@ async def main():
     market = await alpha.get_market_info(MARKET_ID)
 
     # Get odds for sports
-    matchup_odds = odds.get_matchup_odds(  
+    matchup_odds = odds.get_matchup_odds(
+        sport="baseball_mlb",  
         event_id=ODDS_MARKET_ID
     )
 
@@ -35,7 +37,6 @@ async def main():
         slippage=0, 
         market=market
     )
-
     
 if __name__ == "__main__":
     asyncio.run(main()) 

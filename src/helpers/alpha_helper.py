@@ -57,8 +57,8 @@ class AlphaHelper:
                     no=ShareImageItem(**share_image_data.get("no", {})) if "no" in share_image_data else None
                 )
             
-            # Create and return Market object
-            return Market(
+            # Create Market object
+            market = Market(
                 id=data.get("id"),
                 marketAppId=data.get("marketAppId"),
                 slug=data.get("slug"),
@@ -104,6 +104,12 @@ class AlphaHelper:
                 SK=data.get("SK")
             )
             
+            # Log the market object
+            logger.info(f"Fetched market info for {market_id}: {market}")
+            
+            # Return the Market object
+            return market
+            
         except requests.RequestException as e:
             logger.error(f"Failed to fetch market info for {market_id}: {str(e)}")
             return Market()  # Return empty Market object on error
@@ -133,7 +139,10 @@ class AlphaHelper:
                 global_state = self._decode_global_state(app_info)
                 order_details.append(global_state)
             
-            return self._aggregate_orderbook(order_details)
+            logger.info(f"Fetched {len(order_details)} orders for market {market_app_id}: {order_details}")
+            aggregated_orderbook = self._aggregate_orderbook(order_details)
+            logger.info(f"Aggregated orderbook for market {market_app_id}: {aggregated_orderbook}")
+            return aggregated_orderbook
             
         except Exception as e:
             logger.error(f"Failed to get aggregated orderbook for market {market_app_id}: {str(e)}")
