@@ -6,7 +6,7 @@ from math import log10, floor
 
 async def main():
 
-    MARKET_ID = "01JTGR27C84ZKV68TA8FE5GBEY" 
+    MARKET_ID = "01JP1N3DYCC3HA7C1JD2FQHG6P" 
     ODDS_MARKET_ID = "fe3e8dc29347048c12b0e42752801b15"
 
     # Initialize the helpers
@@ -37,6 +37,13 @@ async def main():
         slippage=0, 
         market=market
     )
+    print(f"Escrow App ID: {escrow_app_id}")
     
+    cancel_id = await algo.cancel_bet(
+        escrow_app_id=escrow_app_id,
+        market=market
+    )
+    print(f"Cancel ID: {cancel_id}")
+
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -350,25 +350,12 @@ class AlgorandHelper:
         # Build transaction group
         atc = AtomicTransactionComposer()
         
-        # Add delete escrow transaction
-        delete_escrow_txn = escrow_app_client.create_transaction.delete(
-            AppClientMethodCallParams(
-                method="delete",
-                extra_fee=AlgoAmount(micro_algo=4000),
-                args=[],
-                asset_references=[self.USDC_ASSET_ID, market.yesAssetId, market.noAssetId],
-                app_references=[market.marketAppId],
-                signer=signer
-            )
-        )
-        atc.add_transaction(TransactionWithSigner(delete_escrow_txn.transactions[0], signer))
-        
         # Add register escrow delete transaction
         register_escrow_delete_txn = market_app_client.create_transaction.call(
             AppClientMethodCallParams(
-                method="register_escrow_delete",
-                extra_fee=AlgoAmount(micro_algo=1000),
-                args=[sender_address],
+                method="delete_escrow",
+                extra_fee=AlgoAmount(micro_algo=5000),
+                args=[escrow_app_id, sender_address],
                 asset_references=[self.USDC_ASSET_ID, market.yesAssetId, market.noAssetId],
                 app_references=[escrow_app_id],
                 signer=signer
